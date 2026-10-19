@@ -3,7 +3,7 @@
 This is the maintained runtime fork for an explicit **DeepSeek-V4.1-Flash-1017**
 profile. Development is on `flash1017-preview`, based on public oMLX `v0.7.1rc1`
 (`7a5a3d75ce7463300bdfa5fedccd34348f60ff46`). The experimental package version is
-`0.7.1rc1+flash1017.1`. This local work is being prepared for review; it does not
+`0.7.1rc1+flash1017.2`. This local work is being prepared for review; it does not
 imply that a release containing these changes has been published.
 
 - [Build, install and launch the fork](docs/flash1017-install.md).
@@ -15,14 +15,16 @@ imply that a release containing these changes has been published.
 
 The profile requires explicit opt-in and the pinned
 [`mlx-community/DeepSeek-V4.1-Flash-1017-oQ2.5e-mtp` checkpoint](https://huggingface.co/mlx-community/DeepSeek-V4.1-Flash-1017-oQ2.5e-mtp/tree/78456115d301eecf9fadcdcc81c0cf6f8b2c8eab).
-It combines vocabulary-weight reuse, reference attention rounding, frozen
-DSpark confidence admission, decoder replay with numerical repairs, and bounded
-Engram row caching. It targets a **256 GiB Mac**, one active request and a
-**131,072-token total context cap**. Prompt chunks are at most 8,192 tokens;
+Version 2 keeps stock attention arithmetic, 2K prefill and the native
+acceptance-based MTP controller (maximum depth three). It enables vocabulary
+weight reuse only for rows two through five, bounded Engram row caching and a
+64 MiB prefetch budget. Replay, extra rounding and confidence admission are not
+activated. **This correctness-first candidate is not yet quality-approved.** It targets a **256 GiB Mac**, one active request and a
+**131,072-token total context cap**. Prompt chunks are at most 2,048 tokens;
 the memory guard may shrink them. These are profile limits, not a guarantee
 that every request fits or that every compatible Mac has been qualified.
 
-The archived prototype measured **20.06% less geometric-mean time to first
+The archived v1-style prototype measured **20.06% less geometric-mean time to first
 token** against installed oMLX 0.7.1rc1 with native adaptive MTP in one fixed
 suite. **That result does not qualify this new fork build.** One case regressed,
 peak memory increased, the fixed-512 useful-answer qualification failed, and

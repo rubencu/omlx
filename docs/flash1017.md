@@ -9,9 +9,17 @@ Runtime changes belong here, not in the historical research snapshot.
 
 The active development branch is `flash1017-preview`, initially based on public
 oMLX `v0.7.1rc1`, commit `7a5a3d75ce7463300bdfa5fedccd34348f60ff46`.
-The package version is `0.7.1rc1+flash1017.1`. New installation, serving and
+The package version is `0.7.1rc1+flash1017.2`. New installation, serving and
 performance evidence must identify the actual fork commit and wheel hash.
 Source integration does not transfer an older benchmark to a different build.
+
+Version 2 is a correctness-first candidate and **is not yet quality-approved**.
+The ordinary profile retains stock 0.7.1rc1 attention arithmetic, 2K prefill and
+the native acceptance-only MTP controller capped at three drafts. It enables
+head reuse for rows two through five, Engram row caching and 64 MiB prefetch.
+It does not install replay/shape/priming hooks or the confidence policy. The
+research modules remain in the package but are not activated by this profile.
+Historical v1-style speed measurements below do not transfer to v2.
 
 ## Intended use and activation
 
@@ -34,21 +42,22 @@ the wrong architecture/checkpoint and unsupported combinations: distributed
 execution, bypassing the intended engine, external engines, expert offload,
 quantized KV caches, SpecPrefill and other speculative decoders. Attention
 rounding also has a separate, explicit metadata compatibility flag; that flag
-alone does not enable Flash1017.
+alone does not enable Flash1017. The v2 profile explicitly disables that
+additional rounding boundary, including when metadata requests it.
 
 ## What is included
 
 | Component | Behavior and implementation |
 |---|---|
-| BF16 vocabulary projection | [head.py](../omlx/patches/deepseek_v41/head.py) shares weight loads across two through six short verification rows, used by both target and draft/Markov projections when opted in. Rows two through five preserve the previous per-row reduction structure. Row six replaces a different fallback and has a separate numerical scope; unsupported shapes use the existing path. |
-| Attention-output rounding | [language.py](../omlx/patches/deepseek_v41/language.py), [dspark.py](../omlx/patches/deepseek_v41/dspark.py) and [config.py](../omlx/patches/deepseek_v41/config.py) apply the reference activation-quantization boundary before the grouped output projection in target and draft attention. The complete profile explicitly enables it. This is a compatibility change, not a general answer-quality claim. |
-| Frozen confidence admission | [policy.py](../omlx/patches/deepseek_v41/flash1017/policy.py) and [batch_generator.py](../omlx/patches/mlx_lm_mtp/batch_generator.py) use DSpark confidence and fixed calibration/costs to admit a causal verification prefix. Draft width is five; admission stops at the first non-improving prefix and may select zero draft tokens. That still pays for the fixed-width proposal. Live request timings never recalibrate the policy. Context-copy cycles retain their existing path. |
-| Decoder replay | [cone.py](../omlx/patches/deepseek_v41/flash1017/cone.py) and [cone_arithmetic.py](../omlx/patches/deepseek_v41/flash1017/cone_arithmetic.py) compute the decoder suffixes needed for the pinned dependency layout. Eligibility checks and fallback remain part of the implementation. Native CED is disabled for this profile so two replay strategies are not layered together. |
-| Shape-sensitive numerical repairs | [shape_arithmetic.py](../omlx/patches/deepseek_v41/flash1017/shape_arithmetic.py) preserves projection/split-K, gate, hyper-connection and local WKV behavior where shrinking shapes changes arithmetic. It restores the final expert-dispatch boundary when a short suffix would select a different kernel. Temporary padding is removed from the result; it is not another attention token. These are specific shape repairs, not a general equivalence theorem. |
-| Draft-state priming | [prime_arithmetic.py](../omlx/patches/deepseek_v41/flash1017/prime_arithmetic.py) preserves the relevant arithmetic in all three draft-stage projections, crops before normalization/cache append and verifies the expected priming path completes. Matching the target state alone is insufficient to establish matching draft state. |
+| BF16 vocabulary projection | [head.py](../omlx/patches/deepseek_v41/head.py) shares weight loads across two through five short verification rows, used by target and draft/Markov projections when opted in. Their per-row reduction structure is unchanged. Row six and other unsupported shapes retain the stock fallback. |
+| Attention-output rounding | [language.py](../omlx/patches/deepseek_v41/language.py), [dspark.py](../omlx/patches/deepseek_v41/dspark.py) and [config.py](../omlx/patches/deepseek_v41/config.py) apply the reference activation-quantization boundary before the grouped output projection in target and draft attention. This optional compatibility mechanism remains available, but the v2 profile explicitly disables it. |
+| Research only: frozen confidence admission | [policy.py](../omlx/patches/deepseek_v41/flash1017/policy.py) and [batch_generator.py](../omlx/patches/mlx_lm_mtp/batch_generator.py) use DSpark confidence and fixed calibration/costs to admit a causal verification prefix. Draft width is five; admission stops at the first non-improving prefix and may select zero draft tokens. That still pays for the fixed-width proposal. Live request timings never recalibrate the policy. Context-copy cycles retain their existing path. |
+| Research only: decoder replay | [cone.py](../omlx/patches/deepseek_v41/flash1017/cone.py) and [cone_arithmetic.py](../omlx/patches/deepseek_v41/flash1017/cone_arithmetic.py) compute the decoder suffixes needed for the pinned dependency layout. Eligibility checks and fallback remain part of the implementation. Native CED is disabled for this profile so two replay strategies are not layered together. |
+| Research only: shape-sensitive numerical repairs | [shape_arithmetic.py](../omlx/patches/deepseek_v41/flash1017/shape_arithmetic.py) preserves projection/split-K, gate, hyper-connection and local WKV behavior where shrinking shapes changes arithmetic. It restores the final expert-dispatch boundary when a short suffix would select a different kernel. Temporary padding is removed from the result; it is not another attention token. These are specific shape repairs, not a general equivalence theorem. |
+| Research only: draft-state priming | [prime_arithmetic.py](../omlx/patches/deepseek_v41/flash1017/prime_arithmetic.py) preserves the relevant arithmetic in all three draft-stage projections, crops before normalization/cache append and verifies the expected priming path completes. Matching the target state alone is insufficient to establish matching draft state. |
 | Engram prefetch | [loading.py](../omlx/patches/deepseek_v41/loading.py) uses oMLX's existing disk-backed Engram reader and [storage.py](../omlx/patches/deepseek_v41/storage.py) accepts a model-specific admission budget. The profile raises it from the upstream 16 MiB default to 64 MiB; there is one pending background read, drained at the existing boundaries. |
 | Bounded row reuse | [rows.py](../omlx/patches/deepseek_v41/flash1017/rows.py) integrates the credited [HotRows implementation](../omlx/patches/deepseek_v41/flash1017/hot_rows.py) with the two disk tables: at most 256 MiB per table, 512 MiB combined retained cache payload/tags/sketch. It coordinates with the native reader, handles cache-allocation failure by bypassing the cache, and retains fallback and cleanup paths. This is distinct from KV/prefix caching. |
-| Runtime ownership | [runtime.py](../omlx/patches/deepseek_v41/flash1017/runtime.py) owns replay/cache installation, per-model enable/disable, bounded diagnostic snapshots and shutdown. Controls require drained request boundaries. The integration rejects overlapping/foreign ownership and restores owned attributes while releasing references; inference methods are not patched process-wide. |
+| Runtime ownership | [runtime.py](../omlx/patches/deepseek_v41/flash1017/runtime.py) owns cache installation and shutdown; the v2 loader passes `replay=False`, leaving model, block and projection classes/methods untouched. Controls require drained request boundaries, and the engine must join/synchronize its worker before unload. The row lifecycle lock protects CPU storage and prefetch, not whole-model execution or GPU completion. The internal research replay mode is separate. |
 | Loader and engine integration | [loading.py](../omlx/patches/deepseek_v41/loading.py), [engine_pool.py](../omlx/engine_pool.py) and [engine/vlm.py](../omlx/engine/vlm.py) resolve effective opt-in settings before sizing and engine selection, check metadata before allocation, attach controllers before serving, and close partially started models on the inference worker. |
 | Serving and memory profile | [profile.py](../omlx/patches/deepseek_v41/flash1017/profile.py) and [server.py](../omlx/server.py) enforce the context and request limits below, use a separate prefix-cache namespace and retain normal scheduler memory admission. Loader headroom checks and process-level MLX memory guidelines are explicit parts of this profile. |
 | Standalone fork packaging | The [wheel helper](../scripts/build_flash1017_wheel.py) packages current fork Python/web/data sources with ten hash-pinned public native assets. It checks that their native source/build inputs still match the public base, preserves licenses and generates correct CPython 3.12/arm64 metadata. It does not copy an installed application or depend on laboratory helper paths. |
@@ -64,7 +73,7 @@ the historical qualification simply because it passes that capacity check.
   A smaller explicit context limit remains smaller.
 - **One active request**, with further requests queued. This is a single-machine
   profile, not evidence for parallel-request throughput or cluster inference.
-- **8,192-token maximum prompt chunks**. The existing memory guard may shrink
+- **2,048-token maximum prompt chunks**. The existing memory guard may shrink
   chunks or reject admission. The configured maximum is not a promise that every
   measured or future request uses identical chunk geometry.
 - **32 GiB physical-memory reserve** in the MLX limit calculation, an
@@ -81,7 +90,7 @@ locks alone do not synchronize asynchronous GPU execution.
 
 ## Evidence and claims
 
-The archived October 18 prototype measured **20.06% less geometric-mean time
+The archived October 18 v1-style prototype measured **20.06% less geometric-mean time
 to first token**, 19.554 to 15.631 seconds, against installed oMLX 0.7.1rc1
 with native adaptive MTP enabled. The fixed comparison used eight workload
 definitions, two process blocks and three configurations: 48 measured requests

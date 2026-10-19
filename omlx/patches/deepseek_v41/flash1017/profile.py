@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Explicit, portable configuration for the frozen Flash-1017 experiment."""
+"""Conservative Flash-1017 profile with native 0.7.1rc1 arithmetic."""
 
 import copy
 import hashlib
@@ -7,9 +7,9 @@ from pathlib import Path
 
 MODEL_REPOSITORY = "mlx-community/DeepSeek-V4.1-Flash-1017-oQ2.5e-mtp"
 MODEL_REVISION = "78456115d301eecf9fadcdcc81c0cf6f8b2c8eab"
-PROFILE_VERSION = "flash1017-v1"
+PROFILE_VERSION = "flash1017-v2"
 MAX_CONTEXT = 131072
-PREFILL_STEP = 8192
+PREFILL_STEP = 2048
 METADATA_SHA256 = {
     "config.json": "74259bebe816bb248eb075a9c285c64eb705d9ced63777ef5b0a9263b06793c6",
     "model.safetensors.index.json": "cf5d05c50ce04258ece0b1d47f9abb9f8ff0eeb62665088042b3088a866714d0",
@@ -101,15 +101,17 @@ def apply_model_settings(settings):
     result.deepseek_v41_engram_ssd_offload = True
     result.deepseek_v41_ced_prefill_enabled = False
     result.mtp_enabled = True
-    result.mtp_fixed_depth = 5
-    result.mtp_adaptive_max_depth = 5
+    # Retain the native V4.1 acceptance-only controller: start at three,
+    # then accepted + 1 capped at three. Fixed depth changes verify shapes.
+    result.mtp_fixed_depth = None
+    result.mtp_adaptive_max_depth = 3
     maximum = getattr(settings, "max_context_window", None)
     result.max_context_window = context_limit(maximum)
     return result
 
 
 def configure_scheduler(config):
-    """Apply model-local limits and separate caches from the normal arithmetic."""
+    """Keep native chunk geometry and isolate this profile's prefix cache."""
     config.prefill_step_size = PREFILL_STEP
     config.max_num_seqs = 1
     config.completion_batch_size = 1

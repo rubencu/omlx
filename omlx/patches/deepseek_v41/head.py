@@ -26,8 +26,8 @@ _SOURCE = r"""
 
 # The same per-row dot/reduction order as _SOURCE, sharing each weight load
 # across the short verification block. Closely related BF16 rows 2..5 code
-# predates this work in tacos8me/m5-ultra (4e4d5a81, head.py); the opt-in
-# profile also uses row 6, whose old fallback was a different GEMM reduction.
+# predates this work in tacos8me/m5-ultra (4e4d5a81, head.py). Rows above five
+# retain the stock GEMM fallback, whose reduction differs from this kernel.
 _REUSE_SOURCE = r"""
     const uint row = thread_position_in_grid.x / KL;
     if (row >= N) return;
@@ -82,7 +82,7 @@ def project_logits(x, weight, *, reuse_weights=False):
         reuse_weights
         and weight.dtype == mx.bfloat16
         and x.shape[-1] == width
-        and 2 <= queries <= 6
+        and 2 <= queries <= 5
         and width % 4 == 0
         and width >= 256
         and rows >= 4096

@@ -84,7 +84,9 @@ def load(
         engram_ssd_offload = True
         preserve_mtp = True
         ced_prefill = False
-        attention_output_quantization = True
+        # Stock 0.7.1rc1 has no extra activation-rounding boundary here.
+        # Explicitly override metadata/arguments for the conservative profile.
+        attention_output_quantization = False
     if (path / "conversion.inprogress.json").exists():
         raise ValueError("DeepSeek V4.1 checkpoint conversion is still in progress")
     raw = json.loads((path / "config.json").read_text())
@@ -363,10 +365,11 @@ def load(
         mx.eval(model.parameters())
         model.eval()
         if flash1017_enabled:
-            from .flash1017 import policy, runtime
+            from .flash1017 import runtime
 
-            policy.configure(model.language_model)
-            runtime.install(model)
+            # Native MTP settings were copied at construction. Do not replace
+            # its acceptance controller, draft width or prefill arithmetic.
+            runtime.install(model, replay=False)
         return model, processor
     except BaseException:
         model.close()

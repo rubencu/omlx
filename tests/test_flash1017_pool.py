@@ -54,8 +54,8 @@ def test_effective_profile_precedes_admission_without_mutating_saved_settings(
     )
     effective = pool._effective_flash1017_model_settings(entry, saved)
     assert effective is not saved
-    assert effective.mtp_enabled and effective.mtp_fixed_depth == 5
-    assert effective.mtp_adaptive_max_depth == 5
+    assert effective.mtp_enabled and effective.mtp_fixed_depth is None
+    assert effective.mtp_adaptive_max_depth == 3
     assert effective.deepseek_v41_engram_ssd_offload
     assert not effective.deepseek_v41_ced_prefill_enabled
     assert effective.max_context_window == profile.MAX_CONTEXT
@@ -177,7 +177,8 @@ def test_requested_and_effective_signature_match(pool_and_entry, monkeypatch):
     values = dict(first)
     assert values["deepseek_v41_flash1017_enabled"] == "True"
     assert values["mtp_enabled"] == "True"
-    assert values["mtp_fixed_depth"] == "5"
+    assert values["mtp_fixed_depth"] == "None"
+    assert values["mtp_adaptive_max_depth"] == "3"
     assert values["deepseek_v41_ced_prefill_enabled"] == "False"
     assert values["flash1017_max_total_tokens"] == "131072"
     assert first == pool._engine_runtime_signature(

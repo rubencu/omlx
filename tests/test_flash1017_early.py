@@ -156,7 +156,7 @@ def test_head_dispatch_is_opt_in_and_bounded(monkeypatch, rows, enabled):
     )
     expected = (
         "reuse"
-        if enabled and 2 <= rows <= 6
+        if enabled and 2 <= rows <= 5
         else ("original" if rows <= 5 else "fallback")
     )
     assert result == expected
@@ -390,7 +390,7 @@ def _loader_fixture(tmp_path, monkeypatch):
     profile.prepare_memory = lambda: events.append("memory") or {"prepared": True}
     profile.check_load_headroom = lambda: events.append("headroom")
     runtime = ModuleType("omlx.patches.deepseek_v41.flash1017.runtime")
-    runtime.install = lambda model: events.append("install")
+    runtime.install = lambda model, **kw: events.append(("install", kw))
     monkeypatch.setitem(sys.modules, profile.__name__, profile)
     monkeypatch.setitem(sys.modules, runtime.__name__, runtime)
     # The package may already expose real submodules from another test.
@@ -414,13 +414,29 @@ def test_load_validation_precedes_allocation_and_installs_after_weights(
         "memory",
         "model",
         "eval",
-        ("mtp", (True, 5)),
-        "install",
+        ("install", {"replay": False}),
     ]
     assert model._flash1017_memory_receipt == {"prepared": True}
     assert model.config.flash1017_enabled
-    assert model.config.attention_output_quantization and model.config.preserve_mtp
+    assert not model.config.attention_output_quantization
+    assert model.config.preserve_mtp
+    assert not hasattr(model.language_model, "_flash1017_experiment")
     assert not model.config.ced_prefill
+
+
+def test_conservative_profile_overrides_extra_rounding_before_construction(tmp_path, monkeypatch):
+    events, _, _, _ = _loader_fixture(tmp_path, monkeypatch)
+    path = tmp_path / "config.json"
+    raw = json.loads(path.read_text())
+    raw["omlx_deepseek_v41"]["attention_output_quantization"] = True
+    path.write_text(json.dumps(raw))
+    model, _ = loading.load(
+        tmp_path, flash1017_enabled=True, attention_output_quantization=True
+    )
+    assert model.config.attention_output_quantization is False
+    assert events[-1] == ("install", {"replay": False})
+    assert not any(isinstance(event, tuple) and event[0] == "mtp" for event in events)
+    assert not hasattr(model.language_model, "_flash1017_experiment")
 
 
 def test_disabled_load_never_installs_or_checks_profile(tmp_path, monkeypatch):
@@ -435,7 +451,8 @@ def test_disabled_load_never_installs_or_checks_profile(tmp_path, monkeypatch):
 def test_install_failure_closes_model(tmp_path, monkeypatch):
     events, _, _, runtime = _loader_fixture(tmp_path, monkeypatch)
 
-    def fail(model):
+    def fail(model, *, replay):
+        assert replay is False
         raise RuntimeError("installation failed")
 
     runtime.install = fail

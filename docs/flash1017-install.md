@@ -8,8 +8,15 @@ correctness nor the historical 20.06% first-token improvement.
 
 The initial fork branch is `flash1017-preview`, based on public oMLX
 `v0.7.1rc1` commit `7a5a3d75ce7463300bdfa5fedccd34348f60ff46`. The experimental
-distribution version is **`0.7.1rc1+flash1017.1`**. It is not a new model or a
+distribution version is **`0.7.1rc1+flash1017.2`**. It is not a new model or a
 new weight conversion.
+
+Version 2 is a correctness-first candidate, **not yet quality-approved**. It
+retains stock attention arithmetic, 2K prefill and native acceptance-based MTP
+(maximum depth three), plus head reuse for rows two through five, Engram row
+caching and 64 MiB prefetch. The older replay/confidence/rounding profile and
+its performance results do not describe this version. Use a fresh server base
+directory; the new `flash1017-v2` prefix-cache namespace does not reuse v1 state.
 
 ## What the wheel contains
 
@@ -72,8 +79,8 @@ packaging contract; there is no override to bypass these checks.
 The output is:
 
 ```text
-omlx-0.7.1rc1+flash1017.1-cp312-cp312-macosx_15_0_arm64.whl
-omlx-0.7.1rc1+flash1017.1-cp312-cp312-macosx_15_0_arm64.whl.sha256
+omlx-0.7.1rc1+flash1017.2-cp312-cp312-macosx_15_0_arm64.whl
+omlx-0.7.1rc1+flash1017.2-cp312-cp312-macosx_15_0_arm64.whl.sha256
 ```
 
 The helper refuses an existing wheel filename. To compare repeated builds,
@@ -93,7 +100,7 @@ Installation needs network access unless all runtime dependencies are cached.
 ```sh
 python3.12 -m venv .venv-flash1017
 .venv-flash1017/bin/python -m pip install \
-  dist/flash1017/omlx-0.7.1rc1+flash1017.1-cp312-cp312-macosx_15_0_arm64.whl
+  dist/flash1017/omlx-0.7.1rc1+flash1017.2-cp312-cp312-macosx_15_0_arm64.whl
 .venv-flash1017/bin/python -m pip check
 .venv-flash1017/bin/omlx --version
 ```

@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Real Metal head checks, including the production hidden width and tail rows.
 
-Rows 2-5 compare with the normal batched head. Row 6 compares with six normal
-one-row reductions, not the old six-row GEMM, whose reduction order differs.
+Rows 2-5 compare with the normal batched head. Row 6 retains the stock GEMM
+fallback, and is compared directly with that same fallback.
 This is a projection test, not an answer-quality evaluation.
 """
 
@@ -22,14 +22,7 @@ def test_reuse_head_matches_original_row_arithmetic(rows, width):
         weights = mx.random.normal((4099, width)).astype(mx.bfloat16)
         inputs = mx.random.normal((1, rows, width)).astype(mx.bfloat16)
         actual = project_logits(inputs, weights, reuse_weights=True)
-        expected = (
-            project_logits(inputs, weights)
-            if rows <= 5
-            else mx.concatenate(
-                [project_logits(inputs[:, i : i + 1], weights) for i in range(rows)],
-                axis=1,
-            )
-        )
+        expected = project_logits(inputs, weights)
         mx.eval(actual, expected)
         assert actual.dtype == mx.float32
         assert actual.shape == (1, rows, 4099)

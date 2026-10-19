@@ -105,7 +105,7 @@ def test_profile_engine_applies_effective_total_context_limit(configured, expect
     config = SchedulerConfig()
     instance._configure_flash1017_scheduler(config)
     assert config.max_total_tokens == expected
-    assert config.max_num_seqs == 1 and config.prefill_step_size == 8192
+    assert config.max_num_seqs == 1 and config.prefill_step_size == 2048
 
 
 def test_ordinary_engine_does_not_change_scheduler_context_or_concurrency():

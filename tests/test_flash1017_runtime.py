@@ -920,6 +920,135 @@ class CombinedLifecycle(unittest.TestCase):
         self.assertEqual(fixture_hooks(), before)
 
 
+class StorageOnlyLifecycle(unittest.TestCase):
+    setUp = CombinedLifecycle.setUp
+
+    def install(self, **kwargs):
+        return CombinedLifecycle.install(self, replay=False, **kwargs)
+
+    def test_no_inference_class_or_method_is_wrapped(self):
+        model = Outer()
+        target = model.language_model
+        objects = [target, *target.layers, *target.mtp]
+        objects += [block.attn.wkv for block in target.layers]
+        objects += [stage.attn.wkv for stage in target.mtp]
+        original_types = [type(obj) for obj in objects]
+        original_parameters = fixture_parameters(model)
+        native_call = type(target).__call__
+        native_prefill = target._omlx_prefill.__func__
+        native_append = target.dspark_append_context.__func__
+        with mock.patch.object(runtime, "_install_cone", side_effect=AssertionError("Replay installed")):
+            owner = runtime.install(model, replay=False)
+        self.addCleanup(owner.close)
+        self.assertEqual([type(obj) for obj in objects], original_types)
+        self.assertIs(type(target).__call__, native_call)
+        self.assertIs(target._omlx_prefill.__func__, native_prefill)
+        self.assertIs(target.dspark_append_context.__func__, native_append)
+        self.assertEqual(fixture_parameters(model), original_parameters)
+        self.assertFalse(hasattr(target, "_flash1017_cone_owner"))
+        self.assertFalse(hasattr(target, "_flash1017_experiment"))
+        self.assertEqual(target._omlx_prefill(Tensor((1, 8192)), cache=cache()).shape[1], 8192)
+        snapshot = owner.snapshot(clear_cone=True)
+        self.assertFalse(snapshot["replay"])
+        self.assertIsNone(snapshot["cone"])
+        self.assertTrue(snapshot["rows"]["enabled"])
+        owner.set_enabled(False)
+        self.assertFalse(owner.snapshot()["enabled"])
+        self.assertFalse(owner.snapshot()["rows"]["enabled"])
+        owner.set_enabled(True)
+        model.close()
+        self.assertIsNone(owner.snapshot()["cone"])
+        self.assertEqual([type(obj) for obj in objects], original_types)
+
+    def test_storage_only_shutdown_releases_after_native_errors(self):
+        for failure in ("outer", "prefetch", "table"):
+            with self.subTest(failure=failure):
+                model, owner = self.install()
+                if failure == "outer":
+                    model.fail_close = True
+                elif failure == "prefetch":
+                    model.prefetch.fail_close = True
+                else:
+                    model.tables[0].fail_close = True
+                with self.assertRaises(OSError):
+                    model.close()
+                self.assertTrue(owner.closed)
+                self.assertTrue(model.prefetch._closed)
+                self.assertTrue(all(table._closed for table in model.tables))
+                self.assertEqual(owner.snapshot()["rows"]["retained_bytes"], 0)
+                self.assertTrue(owner.snapshot()["model_references_released"])
+
+    def test_storage_controls_reject_reader_and_same_forward_before_mutation(self):
+        model, owner = self.install()
+        owner.rows._read_local.depth = 1
+        try:
+            for action in (model.close, owner.close, owner.snapshot, lambda: owner.set_enabled(False)):
+                with self.assertRaisesRegex(RuntimeError, "row-read callback"):
+                    action()
+        finally:
+            owner.rows._read_local.depth = 0
+        with model.prefetch.forward():
+            for action in (model.close, owner.close, owner.snapshot, lambda: owner.set_enabled(False)):
+                with self.assertRaisesRegex(RuntimeError, "drained forward boundary"):
+                    action()
+        self.assertFalse(owner.closed)
+        self.assertFalse(model.prefetch._closed)
+        model.close()
+
+    def test_storage_foreign_wrapper_refuses_before_partial_release(self):
+        model, owner = self.install()
+        original = model.tables[0]._read_rows
+        object.__setattr__(model.tables[0], "_read_rows", lambda ids: [])
+        try:
+            with self.assertRaisesRegex(RuntimeError, "instance attribute"):
+                model.close()
+            self.assertFalse(owner.closed)
+            self.assertFalse(model.prefetch._closed)
+            self.assertTrue(hasattr(model, runtime._MARKER))
+        finally:
+            object.__setattr__(model.tables[0], "_read_rows", original)
+        model.close()
+
+    def test_reader_refusal_precedes_waiting_for_controller_lock(self):
+        model, owner = self.install()
+
+        def callback(action):
+            owner.rows._read_local.depth = 1
+            try:
+                with self.assertRaisesRegex(RuntimeError, "row-read callback"):
+                    action()
+            finally:
+                owner.rows._read_local.depth = 0
+
+        with ThreadPoolExecutor(1) as worker:
+            for action in (model.close, owner.close, owner.snapshot, lambda: owner.set_enabled(False)):
+                # A shutdown can hold this lock while its drain waits for the
+                # reader. The callback must refuse without waiting for it.
+                with owner._lock:
+                    future = worker.submit(callback, action)
+                    future.result(timeout=2)
+        model.close()
+
+    def test_storage_install_failure_does_not_leave_ownership(self):
+        model = Outer()
+        with mock.patch.object(runtime, "_install_rows", side_effect=ValueError("rows failed")):
+            with self.assertRaisesRegex(ValueError, "rows failed"):
+                runtime.install(model, replay=False)
+        self.assertNotIn("close", vars(model))
+        self.assertFalse(hasattr(model, runtime._MARKER))
+        model.close()
+
+    def test_replay_requires_a_literal_boolean(self):
+        for value in (None, 0, 1, "false"):
+            with self.subTest(value=value), self.assertRaises(TypeError):
+                runtime.install(Outer(), replay=value)
+
+    test_cached_duplicate_rows_remain_byte_identical = CombinedLifecycle.test_cached_duplicate_rows_remain_byte_identical
+    test_closed_controller_does_not_retain_model = CombinedLifecycle.test_closed_controller_does_not_retain_model
+    test_duplicate_install_rejected_and_plain_hooks_unchanged = CombinedLifecycle.test_duplicate_install_rejected_and_plain_hooks_unchanged
+    test_drain_error_releases_caches_and_classes_on_detach = CombinedLifecycle.test_drain_error_releases_caches_and_classes_on_detach
+
+
 class PackageBoundary(unittest.TestCase):
     def test_hot_rows_preserved_verbatim(self):
         self.assertEqual(

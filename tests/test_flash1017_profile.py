@@ -53,8 +53,8 @@ def test_explicit_profile_preserves_original_settings():
     assert original.max_context_window == 1_000_000
     assert effective.deepseek_v41_engram_ssd_offload
     assert not effective.deepseek_v41_ced_prefill_enabled
-    assert effective.mtp_enabled and effective.mtp_fixed_depth == 5
-    assert effective.mtp_adaptive_max_depth == 5
+    assert effective.mtp_enabled and effective.mtp_fixed_depth is None
+    assert effective.mtp_adaptive_max_depth == 3
     assert effective.max_context_window == 131072
 
 
@@ -95,8 +95,8 @@ def test_scheduler_limits_and_cache_namespace():
         settings.prefill_step_size,
         settings.max_num_seqs,
         settings.completion_batch_size,
-    ) == (8192, 1, 1)
-    assert settings.paged_ssd_cache_dir == "/cache/flash1017-v1"
+    ) == (2048, 1, 1)
+    assert settings.paged_ssd_cache_dir == "/cache/flash1017-v2"
 
 
 def test_prepare_memory_limits_and_small_machine_refusal(monkeypatch):
@@ -173,7 +173,7 @@ def test_configuration_is_separate_and_repeatable(checkpoint, tmp_path):
     base = flash1017_cli.configure(checkpoint, tmp_path / "server")
     settings = GlobalSettings.load(base_path=base)
     saved = ModelSettingsManager(base).get_settings(flash1017_cli.MODEL_ID)
-    assert saved.deepseek_v41_flash1017_enabled and saved.mtp_fixed_depth == 5
+    assert saved.deepseek_v41_flash1017_enabled and saved.mtp_fixed_depth is None
     assert saved.max_context_window == 131072 and saved.enable_thinking is False
     assert settings.server.host == "127.0.0.1" and settings.server.port == 8001
     assert not settings.huggingface.hf_cache_enabled

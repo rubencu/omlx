@@ -29,7 +29,7 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 BASE_COMMIT = "7a5a3d75ce7463300bdfa5fedccd34348f60ff46"
 BASE_VERSION = "0.7.1rc1"
-VERSION = "0.7.1rc1+flash1017.1"
+VERSION = "0.7.1rc1+flash1017.2"
 BASE_WHEEL_NAME = "omlx-0.7.1rc1-cp312-cp312-macosx_15_0_universal2.whl"
 BASE_WHEEL_SHA256 = "b3e12950a607991a1feb833b1bdc0b92fe41aeb73656ca5373db03d0d87b71c7"
 BASE_URL = f"https://github.com/jundot/omlx/releases/download/v{BASE_VERSION}/{BASE_WHEEL_NAME}"
