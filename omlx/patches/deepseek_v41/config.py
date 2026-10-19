@@ -41,6 +41,11 @@ class ModelConfig:
     norm_eps: float = 1e-20
     o_groups: int = 8
     o_lora_rank: int = 256
+    # Reference activation rounding before grouped wo_a. Checkpoint metadata
+    # may request this boundary without enabling the complete runtime profile.
+    attention_output_quantization: bool = False
+    # Runtime-only opt-in; checkpoint JSON must never activate this profile.
+    flash1017_enabled: bool = False
     # sparse attention: every layer attends over a sliding window, and may add compressed KV on top
     window_size: int = 128
     # one entry per layer, MTP layers included: 0 = sliding window only, r = KV compressed r-to-1
@@ -152,6 +157,13 @@ class ModelConfig:
         values["preserve_mtp"] = bool(
             config.get("omlx_deepseek_v41", {}).get("preserve_mtp", False)
         )
+        rounding = config.get("omlx_deepseek_v41", {}).get(
+            "attention_output_quantization", False
+        )
+        if type(rounding) is not bool:
+            raise TypeError("attention_output_quantization metadata must be a boolean")
+        values["attention_output_quantization"] = rounding
+        values["flash1017_enabled"] = False
         rope = text.get("rope_scaling") or {}
         values.update(
             {

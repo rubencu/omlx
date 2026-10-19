@@ -1,3 +1,42 @@
+# oMLX — Flash1017 experimental fork
+
+This is the maintained runtime fork for an explicit **DeepSeek-V4.1-Flash-1017**
+profile. Development is on `flash1017-preview`, based on public oMLX `v0.7.1rc1`
+(`7a5a3d75ce7463300bdfa5fedccd34348f60ff46`). The experimental package version is
+`0.7.1rc1+flash1017.1`. This local work is being prepared for review; it does not
+imply that a release containing these changes has been published.
+
+- [Build, install and launch the fork](docs/flash1017-install.md).
+- [Profile features, limits, maintenance and upstream plan](docs/flash1017.md).
+- [Planned research repository](https://github.com/rubencu/flash1017-research)
+  (`rubencu/flash1017-research`, not yet published): historical source snapshots,
+  raw measurements, analysis and article. The local companion is
+  `../flash1017-research`.
+
+The profile requires explicit opt-in and the pinned
+[`mlx-community/DeepSeek-V4.1-Flash-1017-oQ2.5e-mtp` checkpoint](https://huggingface.co/mlx-community/DeepSeek-V4.1-Flash-1017-oQ2.5e-mtp/tree/78456115d301eecf9fadcdcc81c0cf6f8b2c8eab).
+It combines vocabulary-weight reuse, reference attention rounding, frozen
+DSpark confidence admission, decoder replay with numerical repairs, and bounded
+Engram row caching. It targets a **256 GiB Mac**, one active request and a
+**131,072-token total context cap**. Prompt chunks are at most 8,192 tokens;
+the memory guard may shrink them. These are profile limits, not a guarantee
+that every request fits or that every compatible Mac has been qualified.
+
+The archived prototype measured **20.06% less geometric-mean time to first
+token** against installed oMLX 0.7.1rc1 with native adaptive MTP in one fixed
+suite. **That result does not qualify this new fork build.** One case regressed,
+peak memory increased, the fixed-512 useful-answer qualification failed, and
+answer-quality equivalence was not established. See the profile guide for the
+full comparison boundaries and credits.
+
+---
+
+## Inherited upstream README
+
+The content below is retained from upstream oMLX. Its release links, app and
+Homebrew installation instructions, benchmarks and general product claims
+describe upstream. Use the fork-specific guides above for Flash1017.
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/icon-rounded-dark.svg" width="140">

@@ -1111,7 +1111,7 @@ def cluster_command(args) -> int:
     return 2
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(
         description="omlx: Production-ready LLM server for Apple Silicon",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1128,6 +1128,16 @@ Examples:
         help="Print the oMLX version and exit",
     )
     subparsers = parser.add_subparsers(dest="command", help="Commands")
+
+    flash_parser = subparsers.add_parser(
+        "flash1017", help="Run the opt-in DeepSeek V4.1 Flash-1017 preview"
+    )
+    flash_parser.add_argument("--model", required=True, help="Pinned checkpoint directory")
+    flash_parser.add_argument("--base-path", default="~/.omlx-flash1017")
+    flash_parser.add_argument("--port", type=int, default=8001)
+    flash_mode = flash_parser.add_mutually_exclusive_group()
+    flash_mode.add_argument("--check", action="store_true", help="Validate metadata without loading weights")
+    flash_mode.add_argument("--configure-only", action="store_true", help="Prepare isolated settings without starting the server")
 
     for name, help_text in (
         ("start", "Start oMLX as a managed background server"),
@@ -1600,7 +1610,7 @@ Example directory structure:
     # Split launch's forwarding separator before argparse. parse_known_args()
     # inconsistently retains it when known options precede it, and stripping it
     # afterward cannot distinguish it from a separator intended for the tool.
-    argv = sys.argv[1:]
+    argv = sys.argv[1:] if argv is None else list(argv)
     if argv[:1] == ["launch"] and "--" in argv[2:]:
         separator_index = argv.index("--", 2)
         args, extra_args = parser.parse_known_args(argv[:separator_index])
@@ -1613,7 +1623,14 @@ Example directory structure:
     else:
         if extra_args:
             parser.error(f"unrecognized arguments: {' '.join(extra_args)}")
-        if args.command == "serve":
+        if args.command == "flash1017":
+            from .flash1017_cli import run
+
+            try:
+                run(args)
+            except (ValueError, OSError) as exc:
+                parser.error(str(exc))
+        elif args.command == "serve":
             if (
                 getattr(args, "memory_guard", None) == "off"
                 and getattr(args, "memory_guard_gb", None) is not None

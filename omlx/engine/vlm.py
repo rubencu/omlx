@@ -1874,6 +1874,15 @@ class VLMBatchedEngine(BaseEngine):
         self._scheduler_config = scheduler_config
         self._stream_interval = stream_interval
         self._enable_thinking = enable_thinking
+        if getattr(model_settings, "deepseek_v41_flash1017_enabled", False):
+            import copy
+
+            from ..patches.deepseek_v41.flash1017.profile import apply_model_settings
+
+            model_settings = apply_model_settings(model_settings)
+            # The pool shares its scheduler defaults across models. Profile
+            # limits must never mutate that shared object.
+            self._scheduler_config = copy.copy(scheduler_config)
         self._model_settings = model_settings
         self._prefill_eviction_callback = prefill_eviction_callback
 
@@ -1918,6 +1927,18 @@ class VLMBatchedEngine(BaseEngine):
                 None,
             ),
         )
+
+    def _configure_flash1017_scheduler(self, config) -> None:
+        if getattr(self._model_settings, "deepseek_v41_flash1017_enabled", False) is True:
+            from ..patches.deepseek_v41.flash1017.profile import (
+                configure_scheduler,
+                context_limit,
+            )
+
+            configure_scheduler(config)
+            config.max_total_tokens = context_limit(
+                self._model_settings.max_context_window
+            )
 
     @property
     def model_name(self) -> str:
@@ -2128,6 +2149,11 @@ class VLMBatchedEngine(BaseEngine):
                 ),
             ):
                 model_type = _read_config_model_type(self._model_name)
+                if (
+                    getattr(self._model_settings, "deepseek_v41_flash1017_enabled", False)
+                    and model_type != "deepseek_v41"
+                ):
+                    raise ValueError("The Flash-1017 profile requires DeepSeek V4.1")
                 if model_type in {"mimo_v2", "mimo_v2_flash"}:
                     from ..patches.mimo_v2.omnimodal import (
                         has_vision_sidecar,
@@ -2176,6 +2202,13 @@ class VLMBatchedEngine(BaseEngine):
                             getattr(
                                 self._model_settings,
                                 "deepseek_v41_ced_prefill_enabled",
+                                False,
+                            )
+                        ),
+                        flash1017_enabled=bool(
+                            getattr(
+                                self._model_settings,
+                                "deepseek_v41_flash1017_enabled",
                                 False,
                             )
                         ),
@@ -2566,6 +2599,7 @@ class VLMBatchedEngine(BaseEngine):
             else SchedulerConfig()
         )
         scheduler_config.moe_offload_active = bool(moe_offload_wrapped)
+        self._configure_flash1017_scheduler(scheduler_config)
         if (
             self._adapter.model_type == "deepseek_v41"
             and self._adapter.config.ced_prefill
@@ -2965,6 +2999,28 @@ class VLMBatchedEngine(BaseEngine):
 
         if engine:
             await engine.stop()
+        elif getattr(self._vlm_model, "_flash1017_runtime_controller", None) is not None:
+            # A failed start can leave the loaded model without an EngineCore
+            # to own teardown. Close it on the same worker that loaded it,
+            # finishing cleanup even if the caller is cancelled.
+            from ..engine_core import get_mlx_executor
+
+            def close_orphan():
+                mx.synchronize()
+                self._vlm_model.close()
+
+            future = asyncio.get_running_loop().run_in_executor(get_mlx_executor(), close_orphan)
+            while not future.done():
+                try:
+                    await asyncio.shield(future)
+                except asyncio.CancelledError:
+                    cancelled = True
+                except Exception:
+                    break
+            try:
+                future.result()
+            except Exception:
+                logger.warning("Error closing partially started Flash-1017 model", exc_info=True)
 
         if self._vision_cache is not None:
             try:

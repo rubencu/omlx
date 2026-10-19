@@ -214,6 +214,7 @@ from .engine.reranker import RerankerEngine
 from .engine.decision import DecisionEngine
 from .engine_pool import EnginePool
 from .exceptions import (
+    ContextWindowExceededError,
     EnginePoolError,
     InsufficientMemoryError,
     InvalidRequestError,
@@ -1021,7 +1022,9 @@ async def invalid_request_error_handler(
         exc,
     )
     if _is_api_route(request):
-        content = _openai_error_body(str(exc), 400, param=exc.field)
+        content = _openai_error_body(
+            str(exc), 400, param=exc.field, code=getattr(exc, "code", None)
+        )
     else:
         content = {"detail": str(exc)}
     return JSONResponse(status_code=400, content=content)
@@ -1114,6 +1117,9 @@ def _streaming_error_payload(e: Exception, context: str) -> dict:
     if isinstance(e, PrefillMemoryExceededError):
         logger.warning(f"{context} prefill rejected: {e}")
         return _prefill_memory_openai_error_body(e)
+    if isinstance(e, ContextWindowExceededError):
+        logger.warning(f"{context} context budget rejected: {e}")
+        return _openai_error_body(str(e), 400, param=e.field, code=e.code)
     logger.error(f"Error during {context}: {e}")
     return {"error": {"message": str(e), "type": "server_error"}}
 
@@ -2195,6 +2201,11 @@ def _configured_max_context_window(model_id: str | None = None) -> int | None:
     model_settings = get_model_settings_for_request(requested_model_id)
     model_id = resolve_model_id(model_id)
 
+    if getattr(model_settings, "deepseek_v41_flash1017_enabled", False) is True:
+        from .patches.deepseek_v41.flash1017.profile import context_limit
+
+        return context_limit(model_settings.max_context_window)
+
     # Priority 1: explicit per-model override (not capped by policy)
     if model_settings and model_settings.max_context_window is not None:
         return model_settings.max_context_window
@@ -2971,6 +2982,8 @@ async def _with_sse_keepalive(
                     if isinstance(e, PrefillMemoryExceededError):
                         logger.warning(f"SSE generator prefill rejected: {e}")
                         error_data = _prefill_memory_openai_error_body(e)
+                    elif isinstance(e, ContextWindowExceededError):
+                        error_data = _streaming_error_payload(e, "SSE generator")
                     else:
                         logger.error(f"SSE generator error: {e}")
                         error_data = {
@@ -7073,6 +7086,9 @@ async def stream_anthropic_messages(
             yield create_error_event(
                 "invalid_request_error", _prefill_memory_error_detail(e)
             )
+        elif isinstance(e, ContextWindowExceededError):
+            logger.warning(f"Anthropic streaming context budget rejected: {e}")
+            yield create_error_event("invalid_request_error", str(e))
         else:
             logger.error(f"Error during Anthropic streaming: {e}")
             yield create_error_event("api_error", str(e))
@@ -8939,6 +8955,9 @@ async def stream_responses_api(
                 "code": guard_body.get("omlx_code", "prefill_memory_exceeded"),
                 "message": guard_body["message"],
             }
+        elif isinstance(e, ContextWindowExceededError):
+            logger.warning(f"Responses API streaming context budget rejected: {e}")
+            failure_error = {"code": e.code, "message": str(e)}
         else:
             logger.error(f"Error during Responses API streaming: {e}")
             failure_error = {"code": "server_error", "message": str(e)}

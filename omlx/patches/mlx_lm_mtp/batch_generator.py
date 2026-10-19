@@ -2939,6 +2939,15 @@ def _dspark_next_drafts(
     if host is None:
         raise _MtpStepFallback("embedded DSpark host is unavailable")
 
+    experiment = getattr(host, "_flash1017_experiment", None)
+    if experiment is not None:
+        if len(gen_batch.uids) != 1:
+            raise ValueError("Flash1017 confidence policy requires one active request")
+        state._flash1017_confidence = None
+        # Explicit depth=0 belongs to context copy: append context without
+        # creating a DSpark proposal or leaving confidence from an old cycle.
+        if depth is None:
+            depth = experiment.draft_width
     if depth is None:
         depth = state.controller.cur if state.controller is not None else state.depth
     depth = min(int(depth), int(getattr(host.args, "dspark_block_size", depth)))
@@ -2952,7 +2961,7 @@ def _dspark_next_drafts(
         return
 
     anchor = committed[-1:].reshape(1, 1)
-    logits, _ = host.dspark_forward(
+    logits, draft_hidden = host.dspark_forward(
         hidden_rows,
         anchor,
         state.mtp_cache,
@@ -2966,6 +2975,7 @@ def _dspark_next_drafts(
     draft_lps: List[Any] = []
     draft_accept_lps: List[Any] = []
     previous = anchor.reshape(1)
+    confidence_embeddings = []
 
     # Drafts are speculative — processor calls shape the draft
     # distribution but must not advance the thinking budget (they would
@@ -2974,7 +2984,10 @@ def _dspark_next_drafts(
     snap = _snap_snapshotable(procs)
 
     for idx in range(depth):
-        bias, _ = host.dspark_markov(previous)
+        bias, markov_embedding = host.dspark_markov(previous)
+        if experiment is not None:
+            # Confidence i sees token i-1, never the candidate it judges.
+            confidence_embeddings.append(markov_embedding)
         logits_2d = logits[:, idx, :] + bias
         if procs is not None and prev_buf is not None:
             prefix = mx.concatenate(
@@ -2994,7 +3007,14 @@ def _dspark_next_drafts(
     state.drafts = mx.concatenate(draft_toks)
     state.draft_lps = draft_lps
     state.draft_accept_lps = draft_accept_lps
-    mx.async_eval(state.drafts)
+    if experiment is not None:
+        confidence = host.mtp[-1].confidence_head(
+            draft_hidden, mx.stack(confidence_embeddings, axis=1)
+        )
+        state._flash1017_confidence = confidence.reshape(-1)
+        mx.async_eval(state.drafts, confidence)
+    else:
+        mx.async_eval(state.drafts)
 
 
 def _chain_next_drafts(
@@ -3372,6 +3392,9 @@ def _set_batched_mrope_deltas(gen_batch: Any, uids: list[Any]) -> None:
 
 
 def _run_verify_cycle_batched(gen_batch: Any, batch_state: _MtpBatchState) -> Any:
+    host = _dspark_host(gen_batch.model)
+    if host is not None and getattr(host, "_flash1017_experiment", None) is not None:
+        raise ValueError("Flash1017 confidence policy requires one active request")
     from .fused_batch import advance
 
     states = [batch_state.states[uid] for uid in gen_batch.uids]
@@ -4098,6 +4121,21 @@ def _run_verify_cycle_chain(
     if state.next_main is None or state.drafts is None:
         raise _MtpStepFallback("chain cycle entered without next_main / drafts")
 
+    experiment_t0 = time.perf_counter()
+    host = _dspark_host(gen_batch.model)
+    experiment = getattr(host, "_flash1017_experiment", None) if host else None
+    confidence_logits = None
+    if experiment is not None:
+        if verify_result is not None or len(gen_batch.uids) != 1:
+            raise ValueError("Flash1017 prefix choice must precede singleton verify")
+        pending = getattr(state, "_flash1017_confidence", None)
+        if pending is not None:
+            confidence_logits = pending.tolist()
+            _clip_block_drafts(
+                state, experiment.select(confidence_logits, int(state.drafts.shape[0]))
+            )
+            state._flash1017_confidence = None
+
     sampler = _resolve_sampler(gen_batch)
     procs = _proc_list(gen_batch)
     is_greedy = _is_greedy(gen_batch)
@@ -4438,6 +4476,15 @@ def _run_verify_cycle_chain(
     if defer_commit:
         return m, finish
     finish()
+    if experiment is not None:
+        experiment.record(
+            confidence_logits=confidence_logits,
+            verified=k,
+            accepted=m,
+            cycle_ms=(time.perf_counter() - experiment_t0) * 1000,
+            copied=bool(copy_cycle),
+            remaining=int(remaining),
+        )
 
 
 def _materialize_mtp_boundary_emit(gen_batch: Any, state: _MtpState) -> None:

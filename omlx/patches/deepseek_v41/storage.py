@@ -359,7 +359,10 @@ PREFETCH_BYTES = 16 * 1024 * 1024
 class EngramPrefetch:
     """One pending CPU read per model, drained at each forward boundary."""
 
-    def __init__(self):
+    def __init__(self, max_bytes=PREFETCH_BYTES):
+        if type(max_bytes) is not int or not 1 <= max_bytes <= 64 * 1024 * 1024:
+            raise ValueError("Engram prefetch budget must be between 1 byte and 64 MiB")
+        self.budget_bytes = max_bytes
         self._executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="v41-engram"
         )
@@ -373,7 +376,7 @@ class EngramPrefetch:
         if not isinstance(embed, DiskEngramEmbedding) or embed._resident is not None:
             return
         host = np.asarray(ids, dtype=np.int64).copy()
-        if embed.selected_bytes(host.size) + host.nbytes > PREFETCH_BYTES:
+        if embed.selected_bytes(host.size) + host.nbytes > self.budget_bytes:
             return
         future = self._executor.submit(embed._read_rows, host)
         embed._prefetched = (host, future)

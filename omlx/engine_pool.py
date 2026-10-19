@@ -537,6 +537,9 @@ class EnginePool:
     ) -> int:
         """Include Engram runtime storage and optional K2 ANE reservations."""
 
+        runtime_settings = self._effective_flash1017_model_settings(
+            entry, runtime_settings
+        )
         base = self._entry_resident_size(entry) if base_size is None else base_size
         if self._distributed_deployment_for_entry(entry) is not None:
             return base
@@ -872,9 +875,41 @@ class EnginePool:
         )
         requested = bool(
             settings is not None
-            and getattr(settings, "deepseek_v41_engram_ssd_offload", False)
+            and (
+                getattr(settings, "deepseek_v41_engram_ssd_offload", False)
+                or getattr(settings, "deepseek_v41_flash1017_enabled", False)
+            )
         )
         return requested or forced, forced, estimate if estimate.supported else None
+
+    def _effective_flash1017_model_settings(
+        self,
+        entry: EngineEntry,
+        settings: object | None,
+        *,
+        force_lm: bool = False,
+        validate_checkpoint: bool = False,
+    ) -> object | None:
+        """Resolve the complete profile before sizing, dispatch or reuse.
+
+        Metadata is checked only on the load path, not on each ready-engine
+        lease or status poll. The loader checks it again before allocation.
+        """
+        if not getattr(settings, "deepseek_v41_flash1017_enabled", False):
+            return settings
+        from .patches.deepseek_v41.flash1017 import profile
+
+        model_type = (entry.config_model_type or "").replace("-", "_").lower()
+        if model_type != "deepseek_v41" or entry.engine_type != "vlm":
+            raise ValueError("Flash-1017 requires the pinned DeepSeek V4.1 VLM engine")
+        if force_lm:
+            raise ValueError("Flash-1017 cannot bypass its runtime with force_lm")
+        if entry.source_type == "cluster" or self._distributed_deployment_for_entry(entry) is not None:
+            raise ValueError("Flash-1017 requires local single-machine inference")
+        effective = profile.apply_model_settings(settings)
+        if validate_checkpoint:
+            profile.validate_checkpoint(entry.model_path)
+        return effective
 
     def _effective_deepseek_v41_model_settings(
         self,
@@ -885,6 +920,7 @@ class EnginePool:
     ) -> object | None:
         """Apply a forced mmap decision without mutating persisted settings."""
 
+        settings = self._effective_flash1017_model_settings(entry, settings)
         enabled, forced, _ = self._deepseek_v41_engram_offload_status(
             entry,
             settings,
@@ -1073,9 +1109,11 @@ class EnginePool:
         if settings is None:
             return None
 
+        entry = self._entries.get(model_id)
+        if entry is not None:
+            settings = self._effective_flash1017_model_settings(entry, settings)
         to_dict = getattr(settings, "to_dict", None)
         data = to_dict() if callable(to_dict) else {}
-        entry = self._entries.get(model_id)
         is_diffusion = bool(entry and self._entry_is_diffusion_model(entry))
 
         def has_value(key: str) -> bool:
@@ -1111,6 +1149,12 @@ class EnginePool:
         # force a reload when the corresponding feature is disabled.
         mtp_active = bool(data.get("mtp_enabled", False))
         add("mtp_enabled", mtp_active)
+        flash1017_active = bool(data.get("deepseek_v41_flash1017_enabled", False))
+        add("deepseek_v41_flash1017_enabled", flash1017_active)
+        if flash1017_active:
+            # Total-context admission is captured by this model's scheduler
+            # at load, so a smaller serving limit must reload that scheduler.
+            add("flash1017_max_total_tokens", data.get("max_context_window"))
         # Draft depth is read once at engine construction; it must be in the
         # signature while Lightning MTP is active so a change reloads the
         # engine, but a stale value must not force one when MTP is off.
@@ -1317,19 +1361,28 @@ class EnginePool:
                 ):
                     continue
                 config = getattr(engine, "_scheduler_config", None)
+                engine_value = (
+                    1
+                    if getattr(
+                        getattr(engine, "_model_settings", None),
+                        "deepseek_v41_flash1017_enabled",
+                        False,
+                    )
+                    else value
+                )
                 if config is not None:
-                    _set_concurrency_limits(config, value)
+                    _set_concurrency_limits(config, engine_value)
                 core = getattr(getattr(engine, "_engine", None), "engine", None)
                 scheduler = getattr(core, "scheduler", None)
                 if scheduler is None:
                     continue
-                _set_concurrency_limits(scheduler.config, value)
+                _set_concurrency_limits(scheduler.config, engine_value)
                 executor = getattr(core, "_mlx_executor", None)
                 if executor is None:
                     continue
                 # A shut-down executor means the engine is stopping.
                 with suppress(RuntimeError):
-                    executor.submit(_set_decode_cap, scheduler, value)
+                    executor.submit(_set_decode_cap, scheduler, engine_value)
 
     def discover_models(
         self, model_dirs: str | list[str], pinned_models: list[str] | None = None
@@ -2419,6 +2472,19 @@ class EnginePool:
             ModelLoadingError: If model is already being loaded
         """
         entry = self._entries.get(model_id)
+        requested_settings = runtime_settings
+        if entry is not None and requested_settings is None and self._settings_manager is not None:
+            get_settings = getattr(self._settings_manager, "get_settings", None)
+            if callable(get_settings):
+                requested_settings = get_settings(model_id)
+        if entry is not None and getattr(
+            requested_settings, "deepseek_v41_flash1017_enabled", False
+        ):
+            # Validate the requested engine mode before the native family
+            # shortcut can silently turn force_lm back off.
+            runtime_settings = self._effective_flash1017_model_settings(
+                entry, requested_settings, force_lm=force_lm
+            )
         if force_lm and entry is not None and not self._has_mlx_lm_path(entry):
             # The VLM engine is the only text engine for these families.
             force_lm = False
@@ -2510,6 +2576,10 @@ class EnginePool:
 
             self._raise_if_model_path_missing_locked(model_id, entry)
             self._raise_if_load_failed(model_id, entry)
+            runtime_settings = self._effective_flash1017_model_settings(
+                entry, runtime_settings, force_lm=force_lm,
+                validate_checkpoint=True,
+            )
 
             # Pre-load admission against the memory ceiling from the
             # process memory enforcer (min of static and dynamic). Try
@@ -3721,6 +3791,14 @@ class EnginePool:
         entry = self._entries[model_id]
         if entry.is_loading:
             raise ModelLoadingError(model_id)
+        requested_settings = runtime_settings
+        if requested_settings is None and self._settings_manager is not None:
+            requested_settings = self._settings_manager.get_settings(model_id)
+        if getattr(requested_settings, "deepseek_v41_flash1017_enabled", False):
+            runtime_settings = self._effective_flash1017_model_settings(
+                entry, requested_settings, force_lm=force_lm,
+                validate_checkpoint=True,
+            )
         await self._check_splash_launcher(model_id, runtime_settings)
 
         entry.is_loading = True
@@ -3935,6 +4013,18 @@ class EnginePool:
             try:
                 await engine.start()
             except Exception as start_error:
+                if getattr(model_settings, "deepseek_v41_flash1017_enabled", False):
+                    # A generic-engine fallback would omit the requested
+                    # arithmetic and ownership profile. Fail with its cause.
+                    try:
+                        await engine.stop()
+                    except Exception:
+                        logger.warning(
+                            "Error closing failed Flash-1017 engine for %s",
+                            model_id,
+                            exc_info=True,
+                        )
+                    raise
                 if isinstance(engine, SplashEngine):
                     # start() already stopped Splash; its error carries the
                     # tail of the Splash log. There is no MLX fallback.

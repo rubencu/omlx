@@ -62,8 +62,29 @@ def load(
     preserve_mtp=None,
     moe_expert_offload_resident_fraction=None,
     ced_prefill=False,
+    attention_output_quantization=None,
+    flash1017_enabled=False,
 ):
+    if type(flash1017_enabled) is not bool:
+        raise TypeError("flash1017_enabled must be a boolean")
+    if (
+        attention_output_quantization is not None
+        and type(attention_output_quantization) is not bool
+    ):
+        raise TypeError("attention_output_quantization must be a boolean or None")
     path = Path(path)
+    memory_receipt = None
+    if flash1017_enabled:
+        if moe_expert_offload_resident_fraction is not None:
+            raise ValueError("Flash1017 does not support MoE expert offload")
+        from .flash1017.profile import prepare_memory, validate_checkpoint
+
+        validate_checkpoint(path)
+        memory_receipt = prepare_memory()
+        engram_ssd_offload = True
+        preserve_mtp = True
+        ced_prefill = False
+        attention_output_quantization = True
     if (path / "conversion.inprogress.json").exists():
         raise ValueError("DeepSeek V4.1 checkpoint conversion is still in progress")
     raw = json.loads((path / "config.json").read_text())
@@ -79,6 +100,11 @@ def load(
             raise ValueError("Expected a DeepSeek V4.1 checkpoint")
         format_spec = {"engram_tables": source_engram_tables(mapping, raw)}
     config = ModelConfig.from_dict(raw)
+    config.flash1017_enabled = flash1017_enabled
+    if flash1017_enabled:
+        config.ced_prefill = False
+    if attention_output_quantization is not None:
+        config.attention_output_quantization = attention_output_quantization
     if source_checkpoint and preserve_mtp is None:
         from ..mlx_lm_mtp import is_mtp_active
 
@@ -104,6 +130,8 @@ def load(
                 "unsupported; falling back to full decoder prefill"
             )
     model = Model(config)
+    if flash1017_enabled:
+        model._flash1017_memory_receipt = memory_receipt
     if config.engram_layer_ids:
         logger.info(
             "DeepSeek V4.1 Engram mode: %s",
@@ -149,7 +177,11 @@ def load(
         if format_spec.get("engram_tables"):
             # Keep the GPU submission boundaries in both modes. Resident tables
             # are excluded by submit(), so RAM mode schedules no disk reads.
-            model.language_model._engram_prefetch = EngramPrefetch()
+            model.language_model._engram_prefetch = (
+                EngramPrefetch(max_bytes=64 * 2**20)
+                if flash1017_enabled
+                else EngramPrefetch()
+            )
         expected_shapes = {
             name: value.shape for name, value in tree_flatten(model.parameters())
         }
@@ -210,7 +242,13 @@ def load(
                         finally:
                             reader.close()
                     else:
+                        if flash1017_enabled:
+                            from .flash1017.profile import check_load_headroom
+
+                            check_load_headroom()
                         values = _load_shard(path / filename)
+                        if flash1017_enabled:
+                            check_load_headroom()
                     for key in values:
                         if mapping.get(key) != filename:
                             raise ValueError(f"Unexpected or misplaced weight: {key}")
@@ -324,6 +362,11 @@ def load(
                     layer.engram.embed.make_resident()
         mx.eval(model.parameters())
         model.eval()
+        if flash1017_enabled:
+            from .flash1017 import policy, runtime
+
+            policy.configure(model.language_model)
+            runtime.install(model)
         return model, processor
     except BaseException:
         model.close()

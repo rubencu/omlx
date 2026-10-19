@@ -365,6 +365,8 @@ class Attention(nn.Module):
             )
         out = rope(out, positions, c, bool(ratio), inverse=True)
         grouped = out.reshape(1, length, c.o_groups, -1)
+        if c.attention_output_quantization:
+            grouped = quantize_activation(grouped)
         weight = self.wo_a.weight.reshape(c.o_groups, c.o_lora_rank, -1)
         return self.wo_b(mx.einsum("bsgd,grd->bsgr", grouped, weight).flatten(-2))
 
@@ -1028,7 +1030,11 @@ class LanguageModel(DSparkMixin, nn.Module):
                                 mx.zeros((1, 0), mx.int64) if slot == 6 else empty
                             )
                     rows[i].append(rc[i])
-            logits = project_logits(self.norm(hc_pre(h, pre)), self.head.weight)
+            logits = project_logits(
+                self.norm(hc_pre(h, pre)),
+                self.head.weight,
+                reuse_weights=c.flash1017_enabled,
+            )
             # The scheduler discards this tail-only result. Ordinary forward
             # calls still return real logits for every input token.
             results.append(

@@ -56,7 +56,9 @@ def test_packed_resident_and_prefetched_rows_match(tmp_path, monkeypatch):
         np.testing.assert_array_equal(
             actual.astype(mx.float32), resident(mx.array([[2, 3]])).astype(mx.float32)
         )
-        monkeypatch.setattr(storage, "PREFETCH_BYTES", 1)
+        # Admission is now instance-local so profile and ordinary readers can
+        # coexist without changing each other's budgets.
+        monkeypatch.setattr(prefetch, "budget_bytes", 1)
         prefetch.submit(disk, ids)
         assert prefetch._pending is None
         prefetch.submit(resident, ids)

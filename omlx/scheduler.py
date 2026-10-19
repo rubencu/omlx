@@ -58,6 +58,8 @@ from .cache.pooling_delta import compact_pooling_cache_snapshot
 from .cache.prefix_cache import BlockAwarePrefixCache, cachelist_pm_member_plan
 from .decode_activity import get_decode_activity
 from .exceptions import (
+    ContextWindowExceededError,
+    InvalidRequestError,
     PrefillMemoryExceededError,
     describe_ceiling_binding,
     is_cache_corruption_error,
@@ -1854,6 +1856,9 @@ class SchedulerConfig:
     # Per-forward embedding input chunk size
     embedding_batch_size: int = 32
     prefill_step_size: int = 2048
+    # Optional serving qualification cap, including prompt and output budget.
+    # None preserves normal model behavior. Flash1017 opts in per engine.
+    max_total_tokens: int | None = None
     # When True, long prefills are processed one chunk per step() call,
     # interleaved with decode steps for already-running requests. This
     # reduces TTFT for concurrent requests but adds per-step overhead.
@@ -10608,6 +10613,24 @@ class Scheduler:
             else:
                 request.prompt_token_ids = list(request.prompt)
             request.num_prompt_tokens = len(request.prompt_token_ids)
+        total_limit = getattr(self.config, "max_total_tokens", None)
+        if total_limit is not None:
+            if type(total_limit) is not int or total_limit < 1:
+                raise ValueError("max_total_tokens must be a positive integer or None")
+            output_budget = request.sampling_params.max_tokens
+            if type(output_budget) is not int or output_budget < 1:
+                raise InvalidRequestError(
+                    "max_tokens must be a positive integer for this context-limited profile",
+                    field="max_tokens",
+                )
+            # Count the actual complete token sequence, including cached
+            # prefixes and template/media tokens. Caller counters, cache hits,
+            # or a smaller uncached suffix must not bypass the total budget.
+            prompt_tokens = len(request.prompt_token_ids)
+            if prompt_tokens + output_budget > total_limit:
+                raise ContextWindowExceededError(
+                    prompt_tokens, output_budget, total_limit
+                )
         self._resolve_generation_prompt_start(request)
         if self.moe_offload_stats is not None:
             request.moe_offload_start = self.moe_offload_stats()

@@ -380,6 +380,23 @@ class InvalidRequestError(APIError):
         self.field = field
 
 
+class ContextWindowExceededError(InvalidRequestError):
+    """The tokenized prompt plus requested completion exceeds a serving cap."""
+
+    code = "context_length_exceeded"
+
+    def __init__(self, prompt_tokens: int, output_tokens: int, limit: int):
+        super().__init__(
+            f"Maximum context length is {limit} tokens; requested "
+            f"{prompt_tokens} prompt tokens + {output_tokens} output tokens "
+            f"= {prompt_tokens + output_tokens}. Reduce the prompt or max_tokens.",
+            field="max_tokens",
+        )
+        self.prompt_tokens = prompt_tokens
+        self.output_tokens = output_tokens
+        self.limit = limit
+
+
 class RateLimitError(APIError):
     """Request was rate limited."""
 

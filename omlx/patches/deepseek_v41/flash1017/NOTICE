@@ -1,0 +1,19 @@
+Flash1017 runtime research preview
+
+The dependency-cone arithmetic and its numerical shape/DSpark repairs are
+ported from the local Flash1017 research work. They are model- and runtime-
+scoped; they do not establish universal numerical or quality equivalence.
+The integration and lifecycle adapter are local additions under Apache-2.0.
+
+hot_rows.py is copied verbatim from tacos8me/m5-ultra:
+https://github.com/tacos8me/m5-ultra/blob/fb233e22762f11e23123437efd4cbfc400a59f07/kernels/omlx/src/omlx/patches/deepseek_v41/hot_rows.py
+SHA256: 341791362213d565b1b5d5aac1b8c38057375477f62a7f8177529e455e8015fa
+The source SPDX header and full license in HOT_ROWS_LICENSE are preserved.
+provenance.json records the exact source and license pins.
+The bounded cache algorithm is credited to this implementation; the per-model
+ownership, shutdown and production integration are separate local work.
+
+This package builds on oMLX's DeepSeek V4.1 runtime and native CED/DSpark paths.
+Its use of dependency bounds, padding and dispatch restoration is not a claim
+of inventing those general techniques. See the research repository for the
+experiment record, full attribution, measured improvements and limitations.

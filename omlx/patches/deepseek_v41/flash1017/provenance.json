@@ -1,0 +1,43 @@
+{
+  "arithmetic": {
+    "cone_arithmetic.py": {
+      "research_source": "work/cone-experiment/cone.py",
+      "research_sha256": "3add39a4dcc84f58b5674d570be9f5ae6120118e2aa13d81b1e21f8bd2ed6633",
+      "excluded_methods": [
+        "__enter__",
+        "__exit__"
+      ],
+      "arithmetic_bodies_preserved": true
+    },
+    "shape_arithmetic.py": {
+      "research_source": "work/cone-v2/stabilization.py",
+      "research_sha256": "d5d7b58149b78bcdec2d210eb9b2dc71717d0a413dc2fb15e776b83bdd559a80",
+      "excluded_methods": [
+        "__enter__",
+        "__exit__"
+      ],
+      "arithmetic_bodies_preserved": true
+    },
+    "prime_arithmetic.py": {
+      "research_source": "work/cone-dspark-stable/stabilization.py",
+      "research_sha256": "d6b6af7379dec4d4255fa1518f9b7ab147634c225222c83a5229f3d031a05678",
+      "excluded_methods": [
+        "__enter__",
+        "__exit__",
+        "_restore"
+      ],
+      "arithmetic_bodies_preserved": true
+    }
+  },
+  "hot_rows": {
+    "repository": "tacos8me/m5-ultra",
+    "commit": "fb233e22762f11e23123437efd4cbfc400a59f07",
+    "source_url": "https://raw.githubusercontent.com/tacos8me/m5-ultra/fb233e22762f11e23123437efd4cbfc400a59f07/kernels/omlx/src/omlx/patches/deepseek_v41/hot_rows.py",
+    "source_sha256": "341791362213d565b1b5d5aac1b8c38057375477f62a7f8177529e455e8015fa",
+    "copied_verbatim": true,
+    "license_url": "https://raw.githubusercontent.com/tacos8me/m5-ultra/fb233e22762f11e23123437efd4cbfc400a59f07/kernels/omlx/LICENSE",
+    "license_sha256": "de69b4352c9952cd5f0f4b8cb4584782a07f02c9ba82aeb5d496aa2b7fe5457d",
+    "tree_notice_check": "Recursive tree at pinned commit returned no NOTICE files; kernels/omlx/LICENSE is the applicable subtree license.",
+    "scope": "Adapter only; no upstream storage or native reader copied."
+  }
+}

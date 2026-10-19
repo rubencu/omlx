@@ -59,6 +59,8 @@ class DSparkAttention(Attention):
         )
         out = rope(out, positions, c, False, inverse=True)
         grouped = out.reshape(batch, length, c.o_groups, -1)
+        if c.attention_output_quantization:
+            grouped = quantize_activation(grouped)
         weight = self.wo_a.weight.reshape(c.o_groups, c.o_lora_rank, -1)
         return self.wo_b(mx.einsum("bsgd,grd->bsgr", grouped, weight).flatten(-2))
 
@@ -66,13 +68,18 @@ class DSparkAttention(Attention):
 class MarkovHead(nn.Module):
     def __init__(self, c):
         super().__init__()
+        self._config = c
         self.embed = nn.Embedding(c.vocab_size, c.dspark_markov_rank)
         self.head = nn.Linear(c.dspark_markov_rank, c.vocab_size, bias=False)
 
     def __call__(self, ids):
         embedding = self.embed(ids)
         return (
-            project_logits(embedding, self.head.weight),
+            project_logits(
+                embedding,
+                self.head.weight,
+                reuse_weights=self._config.flash1017_enabled,
+            ),
             embedding,
         )
 
@@ -209,5 +216,7 @@ def proposal_forward(model, input_ids, cache, draft_length=None):
         h, pre = stage(h, pre, item)
     final = model.mtp[-1]
     h = hc_pre(h, pre)
-    logits = project_logits(final.norm(h), model.head.weight)
+    logits = project_logits(
+        final.norm(h), model.head.weight, reuse_weights=c.flash1017_enabled
+    )
     return logits, h
