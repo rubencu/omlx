@@ -1,38 +1,39 @@
-# oMLX — Flash1017 experimental fork
+# oMLX — DeepSeek Flash1017
 
-This is the maintained runtime fork for an explicit **DeepSeek-V4.1-Flash-1017**
-profile. Development is on `flash1017-preview`, based on public oMLX `v0.7.1rc1`
-(`7a5a3d75ce7463300bdfa5fedccd34348f60ff46`). The experimental package version is
-`0.7.1rc1+flash1017.2`. This local work is being prepared for review; it does not
-imply that a release containing these changes has been published.
+An opt-in oMLX profile for running **DeepSeek-V4.1-Flash-1017** on a Mac with
+**256 GiB or more unified memory**. It serves the pinned
+[`mlx-community/DeepSeek-V4.1-Flash-1017-oQ2.5e-mtp` checkpoint](https://huggingface.co/mlx-community/DeepSeek-V4.1-Flash-1017-oQ2.5e-mtp/tree/78456115d301eecf9fadcdcc81c0cf6f8b2c8eab)
+through oMLX's web interface and OpenAI-compatible API, using the existing
+weights without conversion.
 
-- [Build, install and launch the fork](docs/flash1017-install.md).
-- [Profile features, limits, maintenance and upstream plan](docs/flash1017.md).
-- [Planned research repository](https://github.com/rubencu/flash1017-research)
-  (`rubencu/flash1017-research`, not yet published): historical source snapshots,
-  raw measurements, analysis and article. The local companion is
-  `../flash1017-research`.
+The profile combines three optimizations: BF16 vocabulary-weight reuse across
+short verification batches, a bounded Engram row cache, and 64 MiB Engram
+prefetch. It retains stock attention arithmetic, prompt chunks of up to 2,048
+tokens and native acceptance-based MTP with a maximum of three drafts.
 
-The profile requires explicit opt-in and the pinned
-[`mlx-community/DeepSeek-V4.1-Flash-1017-oQ2.5e-mtp` checkpoint](https://huggingface.co/mlx-community/DeepSeek-V4.1-Flash-1017-oQ2.5e-mtp/tree/78456115d301eecf9fadcdcc81c0cf6f8b2c8eab).
-Version 2 keeps stock attention arithmetic, 2K prefill and the native
-acceptance-based MTP controller (maximum depth three). It enables vocabulary
-weight reuse only for rows two through five, bounded Engram row caching and a
-64 MiB prefetch budget. Replay, extra rounding and confidence admission are not
-activated. It targets a **256 GiB Mac**, one active request and a
-**131,072-token total context cap**. Prompt chunks are at most 2,048 tokens;
-the memory guard may shrink them. These are profile limits, not a guarantee
-that every request fits or that every compatible Mac has been qualified.
+On one **256 GiB M5 Ultra**, the tested package delivered **7.9% higher
+measured token-generation throughput and 4.5% lower time to first visible
+token** across eight fixed workloads in two counterbalanced blocks. All 16
+performance pairs matched in text, token counts and finish reason. A separate
+618-request quality comparison reproduced every baseline answer and finish
+reason exactly, with no task-score regressions. These are bounded observations
+on this setup; [methods and limits](docs/flash1017.md#tested-results) explain
+what they establish.
 
-The installed v2 wheel reproduced **all 618 tested baseline answers and finish
-reasons exactly**, with zero task regressions. Against public oMLX `v0.7.1rc1`
-on one 256 GiB M5 Ultra, the complete eight-workload comparison measured
-**7.9% higher token-generation rate and 4.5% lower time to first visible token**
-(32 measured requests, two paired blocks, geometric means). First-token
-timings varied between blocks; these are observations on this setup, not a
-claim for every prompt or Mac. The [profile guide](docs/flash1017.md) identifies
-the measured wheel, evidence, limits and historical failures. The older
-prototype's 20.06% result does not describe this build.
+The serving profile allows **one active request** and **131,072 tokens total
+context**, including generated tokens. Loading requires at least 210 GiB
+available memory; other model workloads should be unloaded first. The context
+cap is not a guarantee that every request fits. Only the pinned checkpoint and
+the stated M5 Ultra configuration have been evaluated.
+
+- [Build, install and launch](docs/flash1017-install.md)
+- [Optimizations, requirements and tested results](docs/flash1017.md)
+
+The package version is **`0.7.1rc1+flash1017.2`**, on branch
+`flash1017-preview`, based on public oMLX `v0.7.1rc1`
+(`7a5a3d75ce7463300bdfa5fedccd34348f60ff46`). **No fork release has been
+published yet**; the installation guide builds a wheel from this checkout.
+The upstream release and Homebrew links below install upstream oMLX.
 
 ---
 
