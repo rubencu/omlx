@@ -1,22 +1,30 @@
 # Build and install the experimental Flash1017 fork
 
 This fork maintains the runtime implementation. Its companion research record
-belongs in `rubencu/flash1017-research`. The older prototype measurements remain
-historical until this fork's exact installable artifact has been validated and
-measured. A successful package build alone establishes neither inference
-correctness nor the historical 20.06% first-token improvement.
+belongs in `rubencu/flash1017-research`. The measured v2 wheel passed the
+618-request output-preservation check and complete 32-request speed comparison
+described in the [profile guide](flash1017.md). Its results are tied to the
+source and wheel identities below. Older prototype measurements remain
+historical and do not describe this wheel.
 
 The initial fork branch is `flash1017-preview`, based on public oMLX
 `v0.7.1rc1` commit `7a5a3d75ce7463300bdfa5fedccd34348f60ff46`. The experimental
 distribution version is **`0.7.1rc1+flash1017.2`**. It is not a new model or a
 new weight conversion.
 
-Version 2 is a correctness-first candidate, **not yet quality-approved**. It
-retains stock attention arithmetic, 2K prefill and native acceptance-based MTP
+Version 2 retains stock attention arithmetic, 2K prefill and native acceptance-based MTP
 (maximum depth three), plus head reuse for rows two through five, Engram row
 caching and 64 MiB prefetch. The older replay/confidence/rounding profile and
 its performance results do not describe this version. Use a fresh server base
 directory; the new `flash1017-v2` prefix-cache namespace does not reuse v1 state.
+
+The measured source commit is `9280d25a1322c39f2f6713dc22b099a6e9dd41d1`.
+The tested wheel SHA-256 is
+`0fbdb77ca86ce35b4dca0275b534c1fafde7d70f0f7f6a89d5f964821f7f7f06`.
+Use that preserved wheel for the evaluated build. A fresh build uses the current
+checkout; later documentation or build-provenance changes can change its
+checksum even when inference code is unchanged. The research record also pins
+the actual dependency versions used for evaluation.
 
 ## What the wheel contains
 

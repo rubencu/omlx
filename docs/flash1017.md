@@ -13,7 +13,8 @@ The package version is `0.7.1rc1+flash1017.2`. New installation, serving and
 performance evidence must identify the actual fork commit and wheel hash.
 Source integration does not transfer an older benchmark to a different build.
 
-Version 2 is a correctness-first candidate and **is not yet quality-approved**.
+Version 2 passed the complete 618-request comparison described below, with
+exact answer-text/finish parity and zero observed task regressions.
 The ordinary profile retains stock 0.7.1rc1 attention arithmetic, 2K prefill and
 the native acceptance-only MTP controller capped at three drafts. It enables
 head reuse for rows two through five, Engram row caching and 64 MiB prefetch.
@@ -90,6 +91,45 @@ locks alone do not synchronize asynchronous GPU execution.
 
 ## Evidence and claims
 
+The measured v2 package is `0.7.1rc1+flash1017.2`, from runtime commit
+`9280d25a1322c39f2f6713dc22b099a6e9dd41d1`. Its CPython 3.12 Apple Silicon
+wheel SHA-256 is
+`0fbdb77ca86ce35b4dca0275b534c1fafde7d70f0f7f6a89d5f964821f7f7f06`.
+Later documentation-only commits do not change this preserved binary.
+
+All **618 fixed greedy quality responses** match public oMLX `v0.7.1rc1` in
+text and finish reason. Both builds passed HumanEval+ 148/164, MBPP+ 299/378,
+a fixed GSM8K subset 61/64, and authored long-context controls 11/12. No task
+regressed; the same four coding responses reached their output budgets.
+This establishes observed preservation on that finite suite, not universal
+equivalence. Coding used a pinned, isolated macOS EvalPlus adapter; its two
+known canonical-test exceptions and seeded-execution limits remain disclosed.
+
+The installed-wheel performance comparison completed **32 measured requests
+plus four excluded warmups**: eight workloads, each in two paired blocks with
+fresh baseline/candidate processes ordered ABBA. On this M5 Ultra, the
+geometric-mean token-generation rate was **7.9% higher**, and first-visible-token
+latency **4.5% lower**, across the eight-workload mixture. The six natural-text
+workloads measured 8.0% higher generation rate and 5.5% lower first-token latency.
+All 16 timing pairs had identical text, finish reasons and token counts.
+
+Normal EOS stopping was enabled, with a 512-token budget. Five workloads
+reached that budget in both arms; complete-answer latency is limited to the
+other three cases and measured 7.6% lower over their six paired observations.
+Models were loaded before timing, prefix reuse was disabled, and OS caches
+were retained. First-token timing varied noticeably between blocks. Two blocks
+on one machine provide no confidence interval or independent replication.
+Requested memory limits also do not imply identical live wired-memory limits.
+
+The local companion research repository contains
+`validation/quality-v2-01/` and `validation/performance-v2-01/`, with exact
+protocols, raw responses, grades, source/build identities and analysis. The
+first installed v1 build's seven regressions, the corrected v2 reporting bug
+and the interrupted timing attempt are preserved there. A complete replacement
+timing run passed every check and restored the original server's model.
+
+### Historical prototype
+
 The archived October 18 v1-style prototype measured **20.06% less geometric-mean time
 to first token**, 19.554 to 15.631 seconds, against installed oMLX 0.7.1rc1
 with native adaptive MTP enabled. The fixed comparison used eight workload
@@ -118,7 +158,7 @@ response; the cause was not established and the remaining long cases were not
 run. These observations and the unselected/failed experiments remain part of
 the research record.
 
-**None of those measurements is a benchmark of this newly packaged fork.**
+**Those historical prototype measurements are not benchmarks of the v2 wheel.**
 Its public-native wheel also differs from the measured application's native
 binary identity. Packaging/source checks, controller contract tests, actual
 serving checks, numerical comparisons and performance measurements establish

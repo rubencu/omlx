@@ -19,17 +19,20 @@ Version 2 keeps stock attention arithmetic, 2K prefill and the native
 acceptance-based MTP controller (maximum depth three). It enables vocabulary
 weight reuse only for rows two through five, bounded Engram row caching and a
 64 MiB prefetch budget. Replay, extra rounding and confidence admission are not
-activated. **This correctness-first candidate is not yet quality-approved.** It targets a **256 GiB Mac**, one active request and a
+activated. It targets a **256 GiB Mac**, one active request and a
 **131,072-token total context cap**. Prompt chunks are at most 2,048 tokens;
 the memory guard may shrink them. These are profile limits, not a guarantee
 that every request fits or that every compatible Mac has been qualified.
 
-The archived v1-style prototype measured **20.06% less geometric-mean time to first
-token** against installed oMLX 0.7.1rc1 with native adaptive MTP in one fixed
-suite. **That result does not qualify this new fork build.** One case regressed,
-peak memory increased, the fixed-512 useful-answer qualification failed, and
-answer-quality equivalence was not established. See the profile guide for the
-full comparison boundaries and credits.
+The installed v2 wheel reproduced **all 618 tested baseline answers and finish
+reasons exactly**, with zero task regressions. Against public oMLX `v0.7.1rc1`
+on one 256 GiB M5 Ultra, the complete eight-workload comparison measured
+**7.9% higher token-generation rate and 4.5% lower time to first visible token**
+(32 measured requests, two paired blocks, geometric means). First-token
+timings varied between blocks; these are observations on this setup, not a
+claim for every prompt or Mac. The [profile guide](docs/flash1017.md) identifies
+the measured wheel, evidence, limits and historical failures. The older
+prototype's 20.06% result does not describe this build.
 
 ---
 
