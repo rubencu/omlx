@@ -26,14 +26,17 @@ available memory; other model workloads should be unloaded first. The context
 cap is not a guarantee that every request fits. Only the pinned checkpoint and
 the stated M5 Ultra configuration have been evaluated.
 
-- [Build, install and launch](docs/flash1017-install.md)
+- [Install and launch](docs/flash1017-install.md)
 - [Optimizations, requirements and tested results](docs/flash1017.md)
+- [Research article and reproducible evidence](https://github.com/rubencu/flash1017-research/tree/v0.1.0)
 
 The package version is **`0.7.1rc1+flash1017.2`**, on branch
 `flash1017-preview`, based on public oMLX `v0.7.1rc1`
-(`7a5a3d75ce7463300bdfa5fedccd34348f60ff46`). **No fork release has been
-published yet**; the installation guide builds a wheel from this checkout.
-The upstream release and Homebrew links below install upstream oMLX.
+(`7a5a3d75ce7463300bdfa5fedccd34348f60ff46`). The
+[experimental release](https://github.com/rubencu/omlx/releases/tag/v0.7.1rc1-flash1017.2)
+provides the tested wheel, checksum and measured dependency constraints. The
+installation guide also supports source builds. The upstream release and
+Homebrew links below install upstream oMLX.
 
 ---
 

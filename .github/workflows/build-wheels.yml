@@ -19,6 +19,8 @@ concurrency:
 
 jobs:
   build-wheels:
+    # Flash1017 releases attach the exact measured wheel; never rebuild it here.
+    if: ${{ !contains(github.ref_name, '-flash1017.') }}
     # macos-15: the native kernels target MACOSX_DEPLOYMENT_TARGET=15.0, so
     # the post-build import smoke test needs a Sequoia host.
     runs-on: macos-15
@@ -111,7 +113,7 @@ jobs:
           if-no-files-found: error
 
   attach-to-release:
-    if: github.event_name == 'release'
+    if: ${{ github.event_name == 'release' && !contains(github.ref_name, '-flash1017.') }}
     needs: build-wheels
     runs-on: ubuntu-latest
     permissions:

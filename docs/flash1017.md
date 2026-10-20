@@ -145,10 +145,9 @@ The candidate retained 512 MiB of CPU row-cache data. Effective wired-memory
 policies also differed: upstream raised its startup limit to 243.2 GiB, while
 the profile set 224 GiB before loading.
 
-The companion `flash1017-research` checkout contains the protocols, raw
-responses, grades, dependency and source identities, and analyses under
-`validation/quality-v2-01/` and `validation/performance-v2-01/`. That companion
-repository has not yet been published.
+The companion [research release](https://github.com/rubencu/flash1017-research/tree/v0.1.0)
+contains the protocols, raw responses, grades, dependency and source identities,
+and analyses under `validation/quality-v2-01/` and `validation/performance-v2-01/`.
 
 ## Source, packaging and credit
 
